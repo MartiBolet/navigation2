@@ -106,6 +106,8 @@ void RegulatedPurePursuitController::configure(
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".use_rotate_to_heading", rclcpp::ParameterValue(true));
   declare_parameter_if_not_declared(
+      node, plugin_name_ + ".use_rotate_to_goal_heading", rclcpp::ParameterValue(true));
+  declare_parameter_if_not_declared(
     node, plugin_name_ + ".rotate_to_heading_min_angle", rclcpp::ParameterValue(0.785));
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".max_angular_accel", rclcpp::ParameterValue(3.2));
@@ -166,6 +168,7 @@ void RegulatedPurePursuitController::configure(
     plugin_name_ + ".regulated_linear_scaling_min_speed",
     regulated_linear_scaling_min_speed_);
   node->get_parameter(plugin_name_ + ".use_rotate_to_heading", use_rotate_to_heading_);
+  node->get_parameter(plugin_name_ + ".use_rotate_to_goal_heading", use_rotate_to_goal_heading_);
   node->get_parameter(plugin_name_ + ".rotate_to_heading_min_angle", rotate_to_heading_min_angle_);
   node->get_parameter(plugin_name_ + ".max_angular_accel", max_angular_accel_);
   node->get_parameter(plugin_name_ + ".allow_reversing", allow_reversing_);
@@ -380,7 +383,7 @@ bool RegulatedPurePursuitController::shouldRotateToGoalHeading(
 {
   // Whether we should rotate robot to goal heading
   double dist_to_goal = std::hypot(carrot_pose.pose.position.x, carrot_pose.pose.position.y);
-  return use_rotate_to_heading_ && dist_to_goal < goal_dist_tol_;
+  return use_rotate_to_goal_heading_ && dist_to_goal < goal_dist_tol_;
 }
 
 void RegulatedPurePursuitController::rotateToHeading(
@@ -884,6 +887,8 @@ RegulatedPurePursuitController::dynamicParametersCallback(
           continue;
         }
         use_rotate_to_heading_ = parameter.as_bool();
+      } else if (name == plugin_name_ + ".use_rotate_to_goal_heading") {
+        use_rotate_to_goal_heading_ = parameter.as_bool();
       } else if (name == plugin_name_ + ".allow_reversing") {
         if (use_rotate_to_heading_ && parameter.as_bool()) {
           RCLCPP_WARN(
