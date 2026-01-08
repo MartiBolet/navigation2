@@ -108,7 +108,9 @@ void RegulatedPurePursuitController::configure(
   declare_parameter_if_not_declared(
       node, plugin_name_ + ".use_rotate_to_goal_heading", rclcpp::ParameterValue(true));
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".rotate_to_heading_min_angle", rclcpp::ParameterValue(0.785));
+    node, plugin_name_ + ".rotate_to_heading_min_angle", rclcpp::ParameterValue(0.1));
+  declare_parameter_if_not_declared(
+      node, plugin_name_ + ".rotate_to_heading_max_angle", rclcpp::ParameterValue(0.785));
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".max_angular_accel", rclcpp::ParameterValue(3.2));
   declare_parameter_if_not_declared(
@@ -170,6 +172,7 @@ void RegulatedPurePursuitController::configure(
   node->get_parameter(plugin_name_ + ".use_rotate_to_heading", use_rotate_to_heading_);
   node->get_parameter(plugin_name_ + ".use_rotate_to_goal_heading", use_rotate_to_goal_heading_);
   node->get_parameter(plugin_name_ + ".rotate_to_heading_min_angle", rotate_to_heading_min_angle_);
+  node->get_parameter(plugin_name_ + ".rotate_to_heading_max_angle", rotate_to_heading_max_angle_);
   node->get_parameter(plugin_name_ + ".max_angular_accel", max_angular_accel_);
   node->get_parameter(plugin_name_ + ".allow_reversing", allow_reversing_);
   node->get_parameter("controller_frequency", control_frequency);
@@ -188,16 +191,6 @@ void RegulatedPurePursuitController::configure(
       logger_, "The value inflation_cost_scaling_factor is incorrectly set, "
       "it should be >0. Disabling cost regulated linear velocity scaling.");
     use_cost_regulated_linear_velocity_scaling_ = false;
-  }
-
-  /** Possible to drive in reverse direction if and only if
-   "use_rotate_to_heading" parameter is set to false **/
-
-  if (use_rotate_to_heading_ && allow_reversing_) {
-    RCLCPP_WARN(
-      logger_, "Disabling reversing. Both use_rotate_to_heading and allow_reversing "
-      "parameter cannot be set to true. By default setting use_rotate_to_heading true");
-    allow_reversing_ = false;
   }
 
   global_path_pub_ = node->create_publisher<nav_msgs::msg::Path>("received_global_plan", 1);
@@ -344,7 +337,7 @@ geometry_msgs::msg::TwistStamped RegulatedPurePursuitController::computeVelocity
   if (shouldRotateToGoalHeading(carrot_pose)) {
     double angle_to_goal = tf2::getYaw(transformed_plan.poses.back().pose.orientation);
     rotateToHeading(linear_vel, angular_vel, angle_to_goal, speed);
-  } else if (shouldRotateToPath(carrot_pose, angle_to_heading)) {
+  } else if (shouldRotateToPath(carrot_pose, angle_to_heading, speed)) {
     rotateToHeading(linear_vel, angular_vel, angle_to_heading, speed);
   } else {
     applyConstraints(
@@ -371,11 +364,23 @@ geometry_msgs::msg::TwistStamped RegulatedPurePursuitController::computeVelocity
 }
 
 bool RegulatedPurePursuitController::shouldRotateToPath(
-  const geometry_msgs::msg::PoseStamped & carrot_pose, double & angle_to_path)
+  const geometry_msgs::msg::PoseStamped & carrot_pose, double & angle_to_path,
+  const geometry_msgs::msg::Twist & speed)
 {
   // Whether we should rotate robot to rough path heading
   angle_to_path = atan2(carrot_pose.pose.position.y, carrot_pose.pose.position.x);
-  return use_rotate_to_heading_ && fabs(angle_to_path) > rotate_to_heading_min_angle_;
+  if (allow_reversing_ && fabs(angle_to_path) > M_PI/2) {
+    if (angle_to_path < 0) {
+      angle_to_path += M_PI;
+    }
+    else {
+      angle_to_path -= M_PI;
+    }
+  }
+
+  double scaled_heading_angle = rotate_to_heading_min_angle_ + speed.linear.x / desired_linear_vel_ * rotate_to_heading_max_angle_;
+  
+  return use_rotate_to_heading_ && fabs(angle_to_path) > scaled_heading_angle;
 }
 
 bool RegulatedPurePursuitController::shouldRotateToGoalHeading(
@@ -877,6 +882,8 @@ RegulatedPurePursuitController::dynamicParametersCallback(
         max_angular_accel_ = parameter.as_double();
       } else if (name == plugin_name_ + ".rotate_to_heading_min_angle") {
         rotate_to_heading_min_angle_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".rotate_to_heading_max_angle") {
+        rotate_to_heading_max_angle_ = parameter.as_double();
       }
     } else if (type == ParameterType::PARAMETER_BOOL) {
       if (name == plugin_name_ + ".use_velocity_scaled_lookahead_dist") {
@@ -886,22 +893,10 @@ RegulatedPurePursuitController::dynamicParametersCallback(
       } else if (name == plugin_name_ + ".use_cost_regulated_linear_velocity_scaling") {
         use_cost_regulated_linear_velocity_scaling_ = parameter.as_bool();
       } else if (name == plugin_name_ + ".use_rotate_to_heading") {
-        if (parameter.as_bool() && allow_reversing_) {
-          RCLCPP_WARN(
-            logger_, "Both use_rotate_to_heading and allow_reversing "
-            "parameter cannot be set to true. Rejecting parameter update.");
-          continue;
-        }
         use_rotate_to_heading_ = parameter.as_bool();
       } else if (name == plugin_name_ + ".use_rotate_to_goal_heading") {
         use_rotate_to_goal_heading_ = parameter.as_bool();
       } else if (name == plugin_name_ + ".allow_reversing") {
-        if (use_rotate_to_heading_ && parameter.as_bool()) {
-          RCLCPP_WARN(
-            logger_, "Both use_rotate_to_heading and allow_reversing "
-            "parameter cannot be set to true. Rejecting parameter update.");
-          continue;
-        }
         allow_reversing_ = parameter.as_bool();
       }
     }

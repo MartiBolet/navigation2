@@ -155,7 +155,8 @@ protected:
    * @return Whether should rotate to path heading
    */
   bool shouldRotateToPath(
-    const geometry_msgs::msg::PoseStamped & carrot_pose, double & angle_to_path);
+    const geometry_msgs::msg::PoseStamped & carrot_pose, double & angle_to_path,
+    const geometry_msgs::msg::Twist & speed);
 
   /**
    * @brief Whether robot should rotate to final goal orientation
@@ -304,6 +305,7 @@ protected:
   bool use_rotate_to_goal_heading_;
   double max_angular_accel_;
   double rotate_to_heading_min_angle_;
+  double rotate_to_heading_max_angle_;
   double goal_dist_tol_;
   bool allow_reversing_;
   double max_robot_pose_search_dist_;
