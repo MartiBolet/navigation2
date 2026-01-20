@@ -155,8 +155,7 @@ protected:
    * @return Whether should rotate to path heading
    */
   bool shouldRotateToPath(
-    const geometry_msgs::msg::PoseStamped & carrot_pose, double & angle_to_path,
-    const geometry_msgs::msg::Twist & speed);
+    const geometry_msgs::msg::PoseStamped & carrot_pose, double & angle_to_path);
 
   /**
    * @brief Whether robot should rotate to final goal orientation
@@ -310,6 +309,7 @@ protected:
   bool allow_reversing_;
   double max_robot_pose_search_dist_;
   bool use_interpolation_;
+  bool new_plan_;
 
   nav_msgs::msg::Path global_plan_;
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>> global_path_pub_;

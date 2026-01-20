@@ -183,6 +183,9 @@ void RegulatedPurePursuitController::configure(
     plugin_name_ + ".use_interpolation",
     use_interpolation_);
 
+
+  new_plan_ = false;
+
   transform_tolerance_ = tf2::durationFromSec(transform_tolerance);
   control_duration_ = 1.0 / control_frequency;
 
@@ -333,13 +336,16 @@ geometry_msgs::msg::TwistStamped RegulatedPurePursuitController::computeVelocity
   linear_vel = desired_linear_vel_;
 
   // Make sure we're in compliance with basic constraints
-  double angle_to_heading;
+  double angle_to_heading; 
   if (shouldRotateToGoalHeading(carrot_pose)) {
     double angle_to_goal = tf2::getYaw(transformed_plan.poses.back().pose.orientation);
     rotateToHeading(linear_vel, angular_vel, angle_to_goal, speed);
-  } else if (shouldRotateToPath(carrot_pose, angle_to_heading, speed)) {
+  } else if (new_plan_ && shouldRotateToPath(transformed_plan.poses.front(), angle_to_heading)) {
+    rotateToHeading(linear_vel, angular_vel, angle_to_heading, speed);
+  } else if (shouldRotateToPath(carrot_pose, angle_to_heading)) {
     rotateToHeading(linear_vel, angular_vel, angle_to_heading, speed);
   } else {
+    new_plan_ = false;
     applyConstraints(
       curvature, speed,
       costAtPose(pose.pose.position.x, pose.pose.position.y), transformed_plan,
@@ -364,11 +370,16 @@ geometry_msgs::msg::TwistStamped RegulatedPurePursuitController::computeVelocity
 }
 
 bool RegulatedPurePursuitController::shouldRotateToPath(
-  const geometry_msgs::msg::PoseStamped & carrot_pose, double & angle_to_path,
-  const geometry_msgs::msg::Twist & speed)
+  const geometry_msgs::msg::PoseStamped & carrot_pose, double & angle_to_path)
 {
   // Whether we should rotate robot to rough path heading
-  angle_to_path = atan2(carrot_pose.pose.position.y, carrot_pose.pose.position.x);
+  if (new_plan_) {
+    angle_to_path = tf2::getYaw(carrot_pose.pose.orientation);
+  }
+  else {
+    angle_to_path = atan2(carrot_pose.pose.position.y, carrot_pose.pose.position.x);
+  }
+  
   if (allow_reversing_ && fabs(angle_to_path) > M_PI/2) {
     if (angle_to_path < 0) {
       angle_to_path += M_PI;
@@ -378,9 +389,12 @@ bool RegulatedPurePursuitController::shouldRotateToPath(
     }
   }
 
-  double scaled_heading_angle = rotate_to_heading_min_angle_ + speed.linear.x / desired_linear_vel_ * rotate_to_heading_max_angle_;
+  // More precission on the first rotation
+  if (new_plan_) {
+    return use_rotate_to_heading_ && fabs(angle_to_path) > rotate_to_heading_min_angle_;
+  }
   
-  return use_rotate_to_heading_ && fabs(angle_to_path) > scaled_heading_angle;
+  return use_rotate_to_heading_ && fabs(angle_to_path) > rotate_to_heading_max_angle_;
 }
 
 bool RegulatedPurePursuitController::shouldRotateToGoalHeading(
@@ -683,6 +697,7 @@ void RegulatedPurePursuitController::applyConstraints(
 void RegulatedPurePursuitController::setPlan(const nav_msgs::msg::Path & path)
 {
   global_plan_ = path;
+  new_plan_ = true;
 }
 
 void RegulatedPurePursuitController::setSpeedLimit(
